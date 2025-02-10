@@ -23,7 +23,7 @@ blueprint:
       default: []
       selector:
         action: {}
-     light_large_down:
+    light_large_down:
       name: Light Large (Top) Start Hold
       description: >-
         [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
