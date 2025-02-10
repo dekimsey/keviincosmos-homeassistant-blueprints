@@ -1,30 +1,17 @@
 # Clean Blueprint
 blueprint:
-  name: IKEA Styrbar - E2001_E2002 Switch Actions (Z2M)
-  description: Define actions for press and hold on all four buttons of the E2001_E2002 switch.
+  name: IKEA Styrbar - E2001_E2002 Switch Actions (Z2M 2.X) [MQTT Device Trigger]
+  description: >-
+    Uses MQTT device triggers (Z2M 2.X) for all 4 buttons of the E2001_E2002 switch.
   domain: automation
   author: Keviin Cosmos
   input:
-    controller_entity:
-      name: (Zigbee2MQTT) Controller Entity
-      description: The action sensor of the controller to use for the automation.
-      default: ""
+    zigbee_device:
+      name: Zigbee2MQTT device
+      description: The Styrbar remote exposed by Zigbee2MQTT
       selector:
-        entity:
-          domain:
-            - sensor
-          multiple: false
-    hold_delay:
-      name: Hold delay
-      description: If the button has been held more than the configured Hold delay, the corresponding held action is triggered.
-      default: 1000
-      selector:
-        number:
-          min: 100.0
-          max: 5000.0
-          unit_of_measurement: milliseconds
-          mode: box
-          step: 10.0
+        device:
+          integration: mqtt
     light_large_push:
       name: Light Large (Top) Pushed
       default: []
@@ -32,6 +19,14 @@ blueprint:
         action: {}
     light_large_hold:
       name: Light Large (Top) Held
+      description: Triggers upon release of a long-press. If unsure, start with this first.
+      default: []
+      selector:
+        action: {}
+     light_large_down:
+      name: Light Large (Top) Start Hold
+      description: >-
+        [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
       default: []
       selector:
         action: {}
@@ -42,6 +37,14 @@ blueprint:
         action: {}
     light_small_hold:
       name: Light Small (Bottom) Held
+      description: Triggers upon release of a long-press. If unsure, start with this first.
+      default: []
+      selector:
+        action: {}
+     light_small_down:
+      name: Light Small (Bottom) Start Hold
+      description: >-
+        [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
       default: []
       selector:
         action: {}
@@ -52,6 +55,15 @@ blueprint:
         action: {}
     arrow_left_hold:
       name: Arrow Left Held
+      description: >-
+        [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
+      default: []
+      selector:
+        action: {}
+    arrow_left_down:
+      name: Arrow Left Start Hold
+      description: >-
+        [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
       default: []
       selector:
         action: {}
@@ -62,6 +74,14 @@ blueprint:
         action: {}
     arrow_right_hold:
       name: Arrow Right Held
+      description: Triggers upon release of a long-press. If unsure, start with this first.
+      default: []
+      selector:
+        action: {}
+    arrow_right_down:
+      name: Arrow Right Start Hold
+      description: >-
+        [Advanced] Trigger upon beginning of a long-press. Useful when one wants to perform an action that keeps running until this button is released.
       default: []
       selector:
         action: {}
@@ -69,43 +89,139 @@ blueprint:
 mode: single
 max_exceeded: silent
 trigger:
-  - platform: event
-    event_type: state_changed
-    event_data:
-      entity_id: !input controller_entity
+  # These are the raw device triggers as emitted by Z2M
+  # https://www.zigbee2mqtt.io/devices/E2001_E2002.html#button-action-mapping
+  # TOP (on + brightness increase)
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: 'on'
+    id: 'on'
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: brightness_move_up
+    id: brightness_move_up
+  # Bottom (off + brightness decrease)
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: 'off'
+    id: 'off'
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: brightness_move_down
+    id: brightness_move_down
+  # Note: This event fires for both the brightness increase and decrease (the same event is fired for both up & down buttons upon release)
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: brightness_stop
+    id: brightness_stop
+  # Left arrow
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_left_click
+    id: arrow_left_click
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_left_hold
+    id: arrow_left_hold
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_left_release
+    id: arrow_left_release
+  # Right arrow
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_right_click
+    id: arrow_right_click
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_right_hold
+    id: arrow_right_hold
+  - platform: device
+    device_id: !input zigbee_device
+    domain: mqtt
+    type: action
+    subtype: arrow_right_release
+    id: arrow_right_release
 action:
   - variables:
-      trigger_action: "{{ trigger.event.data.new_state.state }}"
+      # disambiguate the "brightness_stop" event as either a release of the up or down trigger.
+      brightness_move_up_release: >-
+        {{trigger.event.data.new_state.attributes.event_type == 'brightness_stop' && trigger.event.data.old_state.attributes.event_type == 'brightness_move_up'}}
+      brightness_move_down_release: >-
+        {{trigger.event.data.new_state.attributes.event_type == 'brightness_stop' && trigger.event.data.old_state.attributes.event_type == 'brightness_move_down'}}
   - choose:
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "on" }}'
+          - condition: trigger
+            id: 'on'
         sequence: !input light_large_push
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "brightness_move_up" }}'
-        sequence: !input light_large_hold
+          - condition: trigger
+            id: brightness_move_up
+        sequence: !input light_large_down
       - conditions:
+          - condition: trigger
+            id: 'off'
           - condition: template
-            value_template: '{{ trigger_action == "off" }}'
+            value_template: '{{brightness_move_up_release}}'
+        sequence: !input light_large_hold
+
+      - conditions:
+          - condition: trigger
+            id: brightness_move_down
         sequence: !input light_small_push
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "brightness_move_down" }}'
-        sequence: !input light_small_hold
+          - condition: trigger
+            id: brightness_move_down
+        sequence: !input light_small_down
       - conditions:
+          - condition: trigger
+            id: 'off'
           - condition: template
-            value_template: '{{ trigger_action == "arrow_left_click" }}'
+            value_template: '{{brightness_move_down_release}}'
+        sequence: !input light_small_hold
+
+      - conditions:
+          - condition: trigger
+            id: arrow_left_click
         sequence: !input arrow_left_push
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "arrow_left_hold" }}'
+          - condition: trigger
+            id: arrow_left_release
         sequence: !input arrow_left_hold
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "arrow_right_click" }}'
+          - condition: trigger
+            id: arrow_left_down
+        sequence: !input arrow_left_down
+
+      - conditions:
+          - condition: trigger
+            id: arrow_right_click
         sequence: !input arrow_right_push
       - conditions:
-          - condition: template
-            value_template: '{{ trigger_action == "arrow_right_hold" }}'
+          - condition: trigger
+            id: arrow_right_release
         sequence: !input arrow_right_hold
+      - conditions:
+          - condition: trigger
+            id: arrow_right_down
+        sequence: !input arrow_right_down
